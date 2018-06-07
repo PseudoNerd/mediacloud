@@ -36,6 +36,9 @@ __HOMEPAGE_URL_PATH_REGEXES = [
     re.compile(r'^[A-Z/\-_]{1,18}/?$'),
 ]
 
+# treat af.reuters.com etc. as distinct domains for get_url_distinct_domain
+REUTERS_COUNTRY_PREFIXES = 'af lta ara ar br ca cn de es fr in it jp mx ru uk'.split()
+
 
 # noinspection SpellCheckingInspection
 def fix_common_url_mistakes(url: str) -> Optional[str]:
@@ -485,6 +488,34 @@ def get_url_host(url: str) -> str:
         return url
 
 
+def _is_reuters_country(host: str) -> bool:
+    """Return true iff the host name is a reuters country host (eg. mx.reuters.com)."""
+
+    name_parts = host.split('.')
+
+    if len(name_parts) < 3:
+        return False
+
+    if not name_parts[-2] == 'reuters':
+        return False
+
+    if name_parts[-3] not in REUTERS_COUNTRY_PREFIXES:
+        return False
+
+    return True
+
+
+def _is_platform_domain(host: str) -> bool:
+    """Return true iff the url matches one of a number of platforms that use the thrid level domain as site id."""
+
+    r = re.search(
+        r'go.com|wordpress.com|blogspot|livejournal.com|privet.ru|wikia.com|feedburner.com'
+        r'|24open.ru|patch.com|tumblr.com', host, re.I
+    )
+
+    return r is not None
+
+
 # noinspection SpellCheckingInspection
 def get_url_distinctive_domain(url: str) -> str:
     """Return a truncated form of URL's host (domain) that distinguishes it from others, e.g.:
@@ -493,38 +524,36 @@ def get_url_distinctive_domain(url: str) -> str:
     * www.blogspot.com => blogspot.com
     * kardashian.blogspot.com => kardashian.blogspot.com
 
-    Return original URL if unable to process the URL."""
+    Return original URL if unable to process the URL.
 
+    This routine is most importantly used to associated story urls with particular media and to dedup
+    media sources with one another.
+    """
     try:
         url = decode_object_from_bytes_if_needed(url)
 
-        url = fix_common_url_mistakes(url)
+        url = normalize_url_lossy(url)
 
         host = get_url_host(url)
         if host is None:
             return url
 
-        name_parts = host.split('.')
-        n = len(name_parts) - 1
-
         if re.search(r'\.(gov|org|com?)\...$', host, re.I):
             # foo.co.uk -> foo.co.uk instead of co.uk
-            parts = [str(name_parts[n - 2]), str(name_parts[n - 1]), str(name_parts[n])]
-            domain = '.'.join(parts)
+            num_parts = 3
         elif re.search(r'\.(edu|gov)$', host, re.I):
-            parts = [str(name_parts[n - 2]), str(name_parts[n - 1])]
-            domain = '.'.join(parts)
-        elif re.search(
-                r'go.com|wordpress.com|blogspot|livejournal.com|privet.ru|wikia.com|feedburner.com'
-                r'|24open.ru|patch.com|tumblr.com', host, re.I
-        ):
-            # identify sites in these domains as the whole host name (abcnews.go.com instead of go.com)
-            domain = host
+            num_parts = 3
+        elif _is_platform_domain(host):
+            num_parts = 3
+        elif _is_reuters_country(host):
+            num_parts = 3
         else:
-            parts = [str(name_parts[n - 1] or ''), str(name_parts[n] or '')]
-            domain = '.'.join(parts)
+            num_parts = 2
 
-        return domain.lower()
+        name_parts = host.split('.')
+        start_index = -1 * num_parts
+
+        return '.'.join([str(s) for s in name_parts[start_index:]])
 
     except Exception as ex:
         log.debug("get_url_distinctive_domain falling back to url: " + str(ex))
