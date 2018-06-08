@@ -509,8 +509,8 @@ def _is_platform_domain(host: str) -> bool:
     """Return true iff the url matches one of a number of platforms that use the thrid level domain as site id."""
 
     r = re.search(
-        r'go.com|wordpress.com|blogspot|livejournal.com|privet.ru|wikia.com|feedburner.com'
-        r'|24open.ru|patch.com|tumblr.com', host, re.I
+        r'\.go\.com|\.wordpress\.com|\.blogspot|\.livejournal\.com|\.privet\.ru|\.wikia\.com|\.feedburner\.com'
+        r'|\.24open\.ru|\.patch\.com|\.tumblr\.com|\.mail\.ru|\.ya\.ru', host, re.I
     )
 
     return r is not None

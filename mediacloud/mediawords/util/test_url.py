@@ -328,6 +328,10 @@ def test_get_url_distinctive_domain():
 
     # "wordpress.com|blogspot|..." exception
     assert mc_url.get_url_distinctive_domain('https://en.blog.wordpress.com/') == 'blog.wordpress.com'
+    assert mc_url.get_url_distinctive_domain('http://foo.mail.ru') == 'foo.mail.ru'
+    assert mc_url.get_url_distinctive_domain('http://baz.ya.ru') == 'baz.ya.ru'
+    assert mc_url.get_url_distinctive_domain('http://bar.livejournal.com') == 'bar.livejournal.com'
+    assert mc_url.get_url_distinctive_domain('http://foobar.feedburner.com') == 'foobar.feedburner.com'
 
 
 # noinspection SpellCheckingInspection
