@@ -58,7 +58,7 @@ use MediaWords::Job::TM::FetchLink;
 use MediaWords::Job::TM::SnapshotTopic;
 use MediaCloud::JobManager::Job;
 use MediaWords::Languages::Language;
-use MediaWords::Solr;
+use MediaWords::Solr::Query;
 use MediaWords::Util::Config;
 use MediaWords::Util::IdentifyLanguage;
 use MediaWords::Util::SQL;
@@ -1500,7 +1500,7 @@ sub import_solr_seed_query_month($$$)
     INFO "import solr seed query month offset $month_offset";
     $solr_query->{ rows } = $max_stories;
 
-    my $stories = MediaWords::Solr::search_for_stories( $db, $solr_query );
+    my $stories = MediaWords::Solr::Query::search_for_stories( $db, $solr_query );
 
     if ( scalar( @{ $stories } ) > $max_returned_stories )
     {
