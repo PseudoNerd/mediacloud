@@ -37,8 +37,6 @@ Documentation of the specific pseudo queries is in the API spec at:
 use List::Compare;
 use Readonly;
 
-use MediaWords::DB;
-
 # die if the transformed query is bigger than this
 Readonly my $MAX_QUERY_LENGTH => 2_000_000;
 
@@ -287,8 +285,6 @@ EOF
 SQL
     )->flat;
 
-    $db->commit;
-
     return { stories_ids => $stories_ids };
 }
 
@@ -356,13 +352,12 @@ sub _consolidate_id_query($$)
 }
 
 # accept a single {~ ... } clause and return a stories_id:(...) clause
-sub _transform_clause($)
+sub _transform_clause($$)
 {
-    my ( $clause ) = @_;
+    my ( $db, $clause ) = @_;
 
-    my $db = MediaWords::DB::connect_to_db();
-
-    $db->begin;
+    my $use_transaction = !$db->in_transaction();
+    $db->begin if ( $use_transaction );
 
     # make a list of all calls to make against all field functions
     my $field_function_calls = {};
@@ -417,7 +412,7 @@ EOF
         delete( $field_function_calls->{ $field_name } );
     }
 
-    $db->commit;
+    $db->commit if ( $use_transaction );
 
     if ( my @remaining_fields = keys( %{ $field_function_calls } ) )
     {
@@ -447,25 +442,27 @@ clauses and return the transformed Solr query.
 
 =cut
 
-sub transform_query($);    # prototype
+sub transform_query($$);    # prototype
 
-sub transform_query($)
+sub transform_query($$)
 {
-    my ( $q ) = @_;
+    my ( $db, $q ) = @_;
 
     unless ( defined( $q ) )
     {
+        # FIXME how about it being set to an empty string?
+        WARN "Solr query undefined.";
         return undef;
     }
 
-    if ( ref( $q ) eq 'ARRAY' )
+    if ( ref( $q ) eq ref( [] ) )
     {
-        return [ map { transform_query( $_ ) } @{ $q } ];
+        return [ map { transform_query( $db, $_ ) } @{ $q } ];
     }
 
     my $t = $q;
 
-    $t =~ s/(\{\~[^\}]*\})/_transform_clause( $1 )/eg;
+    $t =~ s/(\{\~[^\}]*\})/_transform_clause( $db, $1 )/eg;
 
     if ( length( $t ) > $MAX_QUERY_LENGTH )
     {
