@@ -8,27 +8,29 @@ use MediaWords::CommonLibs;
 
 =head1 NAME
 
-MediaWords::Solr::PseudoQueries - transform pseudo query clauses in solr queries
+MediaWords::Solr::PseudoQueries - transform pseudo query clauses in Solr
+queries
 
 =head1 DESCRIPTION
 
-Transform pseudo query clauses in solr queries.
+Transform pseudo query clauses in Solr queries.
 
-Pseudo queries allow us to effectively perform joins with postgres queries directly through the api with queries that
-look like:
+Pseudo queries allow us to effectively perform joins with Postgres queries
+directly through the API with queries that look like:
 
-sentence:obama and {~ timespan:1234 }
+    sentence:obama and {~ timespan:1234 }
 
-which would be processed and replaced before sending to solr with something that looks like:
+which would be processed and replaced before sending to Solr with something
+that looks like:
 
-sentence:obama and stories_id:( ... )
+    sentence:obama and stories_id:( ... )
 
-This module is integrated directly into MediaWords::Solr::Query::query_solr(), so it shouldn't need to be called directly by the user
-to query solr.
+This module is integrated directly into MediaWords::Solr::Query::query_solr(),
+so it shouldn't need to be called directly by the user to query Solr.
 
-Documentation of the specific pseudo queries is in the api spec at doc/api_2_0_spec/api_2_0_spec.md and rendered at
+Documentation of the specific pseudo queries is in the API spec at:
 
-https://github.com/berkmancenter/mediacloud/blob/master/doc/api_2_0_spec/api_2_0_spec.md#apiv2stories_publiclist
+    doc/api_2_0_spec/api_2_0_spec.md
 
 =cut
 
@@ -66,124 +68,148 @@ Readonly my $FIELD_FUNCTIONS => [
 
 # die with an error for the given field if there is no timespan
 # field in the same query
-sub _require_timespan
+sub _require_timespan($$)
 {
     my ( $return_data, $field ) = @_;
 
-    die( "pseudo query error: '$field' field requires a timespan field in the same pseudo query clause" )
-      unless ( $return_data->{ timespan } );
+    unless ( $return_data->{ timespan } )
+    {
+        die <<"EOF";
+            Pseudo query error: '$field' field requires a timespan field in the
+            same pseudo query clause.
+EOF
+    }
 }
 
 # transform link_to_story:1234 into list of stories within timespan that link
 # to the given story
-sub _transform_link_to_story_field
+sub _transform_link_to_story_field($$$)
 {
     my ( $db, $return_data, $to_stories_id ) = @_;
 
     _require_timespan( $return_data, 'link_to_story' );
 
-    my $stories_ids = $db->query( <<END, $to_stories_id )->flat;
-select source_stories_id
-    from snapshot_story_links
-    where
-        ref_stories_id = ?
-END
+    my $stories_ids = $db->query(
+        <<SQL,
+        SELECT source_stories_id
+        FROM snapshot_story_links
+        WHERE ref_stories_id = ?
+SQL
+        $to_stories_id
+    )->flat;
 
     return { stories_ids => $stories_ids };
 }
 
 # transform link_from_story:1234 into list of stories within timespan that are
 # linked from the given story
-sub _transform_link_from_story_field
+sub _transform_link_from_story_field($$$)
 {
     my ( $db, $return_data, $from_stories_id ) = @_;
 
     _require_timespan( $return_data, 'link_from_story' );
 
-    my $stories_ids = $db->query( <<END, $from_stories_id )->flat;
-select ref_stories_id
-    from snapshot_story_links
-    where source_stories_id = ?
-END
+    my $stories_ids = $db->query(
+        <<SQL,
+        SELECT ref_stories_id
+        FROM snapshot_story_links
+        WHERE source_stories_id = ?
+SQL
+        $from_stories_id
+    )->flat;
 
     return { stories_ids => $stories_ids };
 }
 
 # transform link_to_medium:1234 into list of stories within timespan that link
 # to the given medium
-sub _transform_link_to_medium_field
+sub _transform_link_to_medium_field($$$)
 {
     my ( $db, $return_data, $to_media_id ) = @_;
 
     _require_timespan( $return_data, 'link_from_medium' );
 
-    my $stories_ids = $db->query( <<END, $to_media_id )->flat;
-select distinct sl.source_stories_id
-    from
-        snapshot_story_links sl
-        join snapshot_stories s
-            on ( sl.ref_stories_id = s.stories_id )
-    where
-        s.media_id = \$1
-END
+    my $stories_ids = $db->query(
+        <<SQL,
+        SELECT DISTINCT sl.source_stories_id
+        FROM snapshot_story_links AS sl
+            JOIN snapshot_stories AS s
+                ON sl.ref_stories_id = s.stories_id
+        WHERE s.media_id = ?
+SQL
+        $to_media_id
+    )->flat;
 
     return { stories_ids => $stories_ids };
 }
 
 # transform link_from_medium:1234 into list of stories within timespan that are linked
 # from the given medium
-sub _transform_link_from_medium_field
+sub _transform_link_from_medium_field($$$)
 {
     my ( $db, $return_data, $from_media_id ) = @_;
 
     _require_timespan( $return_data, 'link_from_medium' );
 
-    my $stories_ids = $db->query( <<END, $from_media_id )->flat;
-select distinct sl.ref_stories_id
-    from
-        snapshot_story_links sl
-        join snapshot_stories s
-            on ( sl.source_stories_id = s.stories_id )
-    where
-        s.media_id = \$1
-END
+    my $stories_ids = $db->query(
+        <<SQL,
+        SELECT DISTINCT sl.ref_stories_id
+        FROM snapshot_story_links AS sl
+            JOIN snapshot_stories AS s
+                ON sl.source_stories_id = s.stories_id
+        WHERE s.media_id = ?
+SQL
+        $from_media_id
+    )->flat;
 
     return { stories_ids => $stories_ids };
 }
 
 # accept topic:1234 clause and return a topic id and a list of
 # stories in the live topic
-sub _transform_topic_field
+sub _transform_topic_field($$$)
 {
     my ( $db, $return_data, $topics_id ) = @_;
 
-    my $stories_ids = $db->query( <<END, $topics_id )->flat;
-select stories_id from topic_stories where topics_id = ?
-END
+    my $stories_ids = $db->query(
+        <<SQL,
+        SELECT stories_id
+        FROM topic_stories
+        WHERE topics_id = ?
+SQL
+        $topics_id
+    )->flat;
 
     return { topics_id => $topics_id, stories_ids => $stories_ids };
 }
 
 # accept timespan:1234 clause and return a timespan id and a list of
 # stories_ids
-sub _transform_timespan_field
+sub _transform_timespan_field($$$$)
 {
     my ( $db, $return_data, $timespans_id, $live ) = @_;
 
     my $timespan = $db->find_by_id( 'timespans', $timespans_id )
       || die( "Unable to find timespan with id '$timespans_id'" );
-    my $topic = $db->query( <<END, $timespan->{ snapshots_id } )->hash;
-select distinct c.*
-    from
-        topics c
-        join snapshots snap on ( c.topics_id = snap.topics_id )
-    where
-        snap.snapshots_id = ?
-END
+    my $topic = $db->query(
+        <<SQL,
+        SELECT DISTINCT c.*
+        FROM topics AS c
+            JOIN snapshots AS snap
+                ON c.topics_id = snap.topics_id
+        WHERE snap.snapshots_id = ?
+SQL
+        $timespan->{ snapshots_id }
+    )->hash;
 
     MediaWords::TM::Snapshot::setup_temporary_snapshot_tables( $db, $timespan, $topic, $live );
 
-    my $stories_ids = $db->query( "select stories_id from snapshot_story_link_counts" )->flat;
+    my $stories_ids = $db->query(
+        <<SQL
+        SELECT stories_id
+        FROM snapshot_story_link_counts
+SQL
+    )->flat;
 
     return { timespans_id => $timespans_id, stories_ids => $stories_ids, live => $live };
 }
@@ -193,7 +219,7 @@ END
 # or through media) and optionally link to stories tagged with the second tags_id.  if
 # the second tags_id is 'other', return stories link from the first tags_id and linking
 # to any story but the given tags_id.
-sub _transform_link_from_tag_field
+sub _transform_link_from_tag_field($$$$)
 {
     my ( $db, $return_data, $from_tags_id, $to_tags_id ) = @_;
 
@@ -207,37 +233,59 @@ sub _transform_link_from_tag_field
     {
         if ( $to_tags_id eq 'other' )
         {
-            $to_tags_id_clause = <<END;
-and sl.ref_stories_id not in ( select stories_id from tagged_stories ts where ts.tags_id != $from_tags_id )
-END
+            $to_tags_id_clause = <<SQL;
+                AND sl.ref_stories_id NOT IN (
+                    SELECT stories_id
+                    FROM tagged_stories AS ts
+                    WHERE ts.tags_id != $from_tags_id
+                )
+SQL
         }
         elsif ( $to_tags_id =~ /^\d+$/ )
         {
             $to_tags_id += 0;
-            $to_tags_id_clause = <<END;
-and sl.ref_stories_id in ( select stories_id from tagged_stories ts where ts.tags_id = $to_tags_id )
-END
+            $to_tags_id_clause = <<SQL;
+                AND sl.ref_stories_id IN (
+                    SELECT stories_id
+                    FROM tagged_stories AS ts
+                    WHERE ts.tags_id = $to_tags_id
+                )
+SQL
         }
         else
         {
-            die( "pseudo query error: second argument to link_field pseudo query clause must be an integer" );
+            die <<EOF
+                Pseudo query error: second argument to link_field pseudo query
+                clause must be an integer
+EOF
         }
     }
 
-    my $stories_ids = $db->query( <<END )->flat;
-with tagged_stories as (
-    select stm.stories_id, stm.tags_id from snapshot_stories_tags_map stm
-    union
-    select s.stories_id, mtm.tags_id from snapshot_stories s join media_tags_map mtm on ( s.media_id = mtm.media_id )
-)
+    my $stories_ids = $db->query(
+        <<"SQL"
+        WITH tagged_stories AS (
 
-select sl.ref_stories_id
-    from
-        snapshot_story_links sl
-    where
-        ( sl.source_stories_id in ( select stories_id from tagged_stories ts where ts.tags_id = $from_tags_id ) )
-        $to_tags_id_clause
-END
+            SELECT stm.stories_id, stm.tags_id
+            FROM snapshot_stories_tags_map AS stm
+
+            UNION
+
+            SELECT s.stories_id, mtm.tags_id
+            FROM snapshot_stories AS s
+                JOIN media_tags_map AS mtm
+                    ON s.media_id = mtm.media_id
+        )
+
+        SELECT sl.ref_stories_id
+        FROM snapshot_story_links AS sl
+        WHERE sl.source_stories_id IN (
+            SELECT stories_id
+            FROM tagged_stories AS ts
+            WHERE ts.tags_id = $from_tags_id
+        )
+          $to_tags_id_clause
+SQL
+    )->flat;
 
     $db->commit;
 
@@ -249,11 +297,14 @@ END
 #     stories_id:( 1 2 4 5 6 7 9 )
 # into:
 #    stories_id:( 1 2 9 ) stories_id:[ 4 TO 7 ]
-sub _consolidate_id_query
+sub _consolidate_id_query($$)
 {
     my ( $field, $ids ) = @_;
 
-    die( "ids list" ) unless ( @{ $ids } );
+    unless ( @{ $ids } )
+    {
+        die "ids list is unset";
+    }
 
     $ids = [ sort { $a <=> $b } @{ $ids } ];
 
@@ -294,7 +345,10 @@ sub _consolidate_id_query
     my $queries = [];
 
     push( @{ $queries }, map { "$field:[$_->[ 0 ] TO $_->[ -1 ]]" } @{ $long_ranges } );
-    push( @{ $queries }, "$field:(" . join( ' ', @{ $singletons } ) . ')' ) if ( scalar( @{ $singletons } ) > 0 );
+    if ( scalar( @{ $singletons } ) > 0 )
+    {
+        push( @{ $queries }, "$field:(" . join( ' ', @{ $singletons } ) . ')' );
+    }
 
     my $query = join( ' ', @{ $queries } );
 
@@ -302,7 +356,7 @@ sub _consolidate_id_query
 }
 
 # accept a single {~ ... } clause and return a stories_id:(...) clause
-sub _transform_clause
+sub _transform_clause($)
 {
     my ( $clause ) = @_;
 
@@ -333,14 +387,24 @@ sub _transform_clause
         {
             for my $call_args ( @{ $calls } )
             {
-                die( "pseudo query error: $field_name pseudo query field requires at least $num_args arguments" )
-                  unless ( @{ $call_args } >= $num_args );
+                unless ( @{ $call_args } >= $num_args )
+                {
+                    die <<"EOF";
+                        Pseudo query error: $field_name pseudo query field
+                        requires at least $num_args arguments
+EOF
+                }
 
                 my $r = $field_function->( $db, $return_data, @{ $call_args } );
                 push( @{ $return_data->{ $field_name } }, $r );
                 if ( $r->{ stories_ids } && $stories_ids )
                 {
-                    my $lc = List::Compare->new( { lists => [ $stories_ids || [], $r->{ stories_ids } ], unsorted => 1 } );
+                    my $lc = List::Compare->new(
+                        {
+                            lists => [ $stories_ids || [], $r->{ stories_ids } ],    #
+                            unsorted => 1,                                           #
+                        }
+                    );
                     $stories_ids = $lc->get_intersection_ref;
                 }
                 elsif ( !$stories_ids )
@@ -357,10 +421,14 @@ sub _transform_clause
 
     if ( my @remaining_fields = keys( %{ $field_function_calls } ) )
     {
-        die( "pseudo query error: unknown pseudo query fields: " . join( ", ", @remaining_fields ) );
+        my $str_remaining_fields = join( ", ", @remaining_fields );
+        die "Pseudo query error: unknown pseudo query fields: $str_remaining_fields";
     }
 
-    die( "pseudo query error: pseudo query fields failed to return any story ids" ) unless ( $stories_ids );
+    unless ( $stories_ids )
+    {
+        die "Pseudo query error: pseudo query fields failed to return any story ids";
+    }
 
     if ( @{ $stories_ids } > 0 )
     {
@@ -374,16 +442,21 @@ sub _transform_clause
 
 =head2 transform_query( $q )
 
-Given a solr query, transform the pseudo clauses in a query to stories_id:(...) clauses and return the transformed
-solr query.
+Given a Solr query, transform the pseudo clauses in a query to stories_id:(...)
+clauses and return the transformed Solr query.
 
 =cut
 
-sub transform_query
+sub transform_query($);    # prototype
+
+sub transform_query($)
 {
     my ( $q ) = @_;
 
-    return undef unless ( defined( $q ) );
+    unless ( defined( $q ) )
+    {
+        return undef;
+    }
 
     if ( ref( $q ) eq 'ARRAY' )
     {
@@ -394,9 +467,15 @@ sub transform_query
 
     $t =~ s/(\{\~[^\}]*\})/_transform_clause( $1 )/eg;
 
-    die( "transformed query is longer than max of $MAX_QUERY_LENGTH" ) if ( length( $t ) > $MAX_QUERY_LENGTH );
+    if ( length( $t ) > $MAX_QUERY_LENGTH )
+    {
+        die "Transformed query is longer than max of $MAX_QUERY_LENGTH";
+    }
 
-    TRACE "transformed solr query: '$q' -> '$t'\n" unless ( $t eq $q );
+    unless ( $t eq $q )
+    {
+        TRACE "transformed solr query: '$q' -> '$t'";
+    }
 
     return $t;
 }
