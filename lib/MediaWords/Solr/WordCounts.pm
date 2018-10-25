@@ -38,16 +38,16 @@ Readonly my $MAX_SENTENCE_LENGTH => 1024;
 # Max. number of times to count a word in a single sentence
 Readonly my $MAX_REPEATS_PER_SENTENCE => 3;
 
-# Moose instance fields
+# Parameters
+has 'q'                 => ( is => 'rw', isa => 'Str' );
+has 'fq'                => ( is => 'rw', isa => 'ArrayRef' );
+has 'num_words'         => ( is => 'rw', isa => 'Int', default => 500 );
+has 'sample_size'       => ( is => 'rw', isa => 'Int', default => 1000 );
+has 'random_seed'       => ( is => 'rw', isa => 'Int', default => 1 );
+has 'ngram_size'        => ( is => 'rw', isa => 'Int', default => 1 );
+has 'include_stopwords' => ( is => 'rw', isa => 'Bool', default => 0 );
+has 'include_stats'     => ( is => 'rw', isa => 'Bool', default => 0 );
 
-has 'q'                         => ( is => 'rw', isa => 'Str' );
-has 'fq'                        => ( is => 'rw', isa => 'ArrayRef' );
-has 'num_words'                 => ( is => 'rw', isa => 'Int', default => 500 );
-has 'sample_size'               => ( is => 'rw', isa => 'Int', default => 1000 );
-has 'random_seed'               => ( is => 'rw', isa => 'Int', default => 1 );
-has 'ngram_size'                => ( is => 'rw', isa => 'Int', default => 1 );
-has 'include_stopwords'         => ( is => 'rw', isa => 'Bool' );
-has 'include_stats'             => ( is => 'rw', isa => 'Bool' );
 has 'cached_combined_stopwords' => ( is => 'rw', isa => 'HashRef' );
 has 'db' => ( is => 'rw' );
 
