@@ -22,9 +22,6 @@ use MediaWords::Solr::Dump;
 use MediaWords::Test::DB::Environment;
 use MediaWords::Util::Tags;
 
-# remember that we already swapped the solr live collection
-my $_swapped_live_collection;
-
 =head2 test_story_query( $db, $q, $expected_story, $label )
 
 Run the given query against solr, adding an 'and stories_id:$expected_story->{ stories_id }' to make it return at
@@ -169,31 +166,14 @@ sub setup_test_index($)
 {
     my ( $db ) = @_;
 
-    if ( !MediaWords::Test::DB::Environment::using_test_database() )
+    unless ( MediaWords::Test::DB::Environment::using_test_database() )
     {
         LOGDIE( 'setup_test_index can only be called while connected to postgres test database' );
-    }
-
-    if ( !$_swapped_live_collection )
-    {
-        MediaWords::Solr::Query::swap_live_collection( $db );
-        $_swapped_live_collection = 1;
     }
 
     MediaWords::Solr::Dump::delete_all_stories( $db );
     MediaWords::Solr::Dump::queue_all_stories( $db );
     MediaWords::Solr::Dump::import_data( $db, { full => 1, throttle => 0 } );
-}
-
-=head2 using_test_index()
-
-Return true if setup_test_index() has been called to run on the staging index.
-
-=cut
-
-sub using_test_index()
-{
-    return $_swapped_live_collection;
 }
 
 1;

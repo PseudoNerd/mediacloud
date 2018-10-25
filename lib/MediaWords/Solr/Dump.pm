@@ -58,8 +58,6 @@ use MediaWords::Util::Config;
 use MediaWords::Util::Paths;
 use MediaWords::Util::Web;
 use MediaWords::Solr::Query;
-use MediaWords::Test::DB;
-use MediaWords::Test::DB::Environment;
 
 # order and names of fields exported to and imported from csv
 Readonly my @SOLR_FIELDS => qw/stories_id media_id publish_date publish_day publish_week publish_month publish_year
@@ -81,7 +79,6 @@ Readonly my $MIN_STORIES_TO_PROCESS => 1000;
 my $_import_date;
 
 # options
-my $_solr_use_staging;
 my $_stories_queue_table;
 
 # keep track of the max stories_id from the last time we queried the queue table so that we don't have to
@@ -355,21 +352,16 @@ sub _create_delta_import_stories($$)
     return $stories_ids;
 }
 
-# Send a request to MediaWords::Solr::Query::get_solr_url(). Return content on success, die() on error. If $staging is true, use
-# the staging collection; otherwise use the live collection.
+# Send a request to MediaWords::Solr::Query::get_solr_url_collection().
+# Return content on success, die() on error.
 sub _solr_request($$$;$$)
 {
     my ( $db, $path, $params, $content, $content_type ) = @_;
 
-    my $solr_url = MediaWords::Solr::Query::get_solr_url();
+    my $solr_url_collection = MediaWords::Solr::Query::get_solr_url_collection();
     $params //= {};
 
-    my $collection =
-      $_solr_use_staging
-      ? MediaWords::Solr::Query::get_staging_collection( $db )
-      : MediaWords::Solr::Query::get_live_collection( $db );
-
-    my $abs_uri = URI->new( "$solr_url/$collection/$path" );
+    my $abs_uri = URI->new( "$solr_url_collection/$path" );
     $abs_uri->query_form( $params );
     my $abs_url = $abs_uri->as_string;
 
@@ -640,17 +632,6 @@ update snapshots s set searchable = true
 SQL
 }
 
-# die if we are running on the testing databse but using the default solr index
-sub _validate_using_test_db_with_test_index()
-{
-    my ( $db ) = @_;
-
-    if ( MediaWords::Test::DB::Environment::using_test_database() && !MediaWords::Test::Solr::using_test_index() )
-    {
-        die( 'you are using a test database but not a test index.  call MediaWords::Test::Solr::setup_test_index()' );
-    }
-}
-
 =head2 import_data( $options )
 
 Import stories from postgres to solr.
@@ -701,11 +682,9 @@ sub import_data($;$)
     my $empty_queue  = $options->{ empty_queue }  // 0;
     my $throttle     = $options->{ throttle }     // $DEFAULT_THROTTLE;
     my $jobs         = $options->{ jobs }         // 1;
-    my $staging      = $options->{ staging }      // 0;
     my $skip_logging = $options->{ skip_logging } // 0;
     my $daemon       = $options->{ daemon }       // 0;
 
-    $_solr_use_staging          = $staging;
     $_stories_queue_table       = $stories_queue_table;
     $_last_max_queue_stories_id = 0;
 
@@ -797,8 +776,6 @@ Insert stories_ids for all processed stories into the stories queue table.
 sub queue_all_stories($;$)
 {
     my ( $db, $stories_queue_table ) = @_;
-
-    _validate_using_test_db_with_test_index();
 
     $stories_queue_table //= $DEFAULT_STORIES_QUEUE_TABLE;
 

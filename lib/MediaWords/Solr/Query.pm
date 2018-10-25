@@ -40,6 +40,8 @@ use List::MoreUtils qw ( uniq );
 
 use Time::HiRes;
 
+Readonly my $SOLR_COLLECTION => 'collection1';
+
 Readonly my $QUERY_HTTP_TIMEOUT => 900;
 
 Readonly my $DEFAULT_TAG_COUNT_LIMIT => 1000;
@@ -47,16 +49,9 @@ Readonly my $DEFAULT_TAG_COUNT_LIMIT => 1000;
 # numFound from last query_solr() call, accessible get get_last_num_found
 my $_last_num_found;
 
-=head1 FUNCTIONS
-
-=head2 get_solr_url
-
-Get a solr url from the config, returning either the single url if there is one or a random member of the list if there
-is a list.
-
-=cut
-
-sub get_solr_url
+# Get a Solr URL from the config, returning either the single URL if there is
+# one or a random member of the list if there is a list.
+sub get_solr_url()
 {
     my $urls = MediaWords::Util::Config::get_config->{ mediawords }->{ solr_url };
 
@@ -69,61 +64,14 @@ sub get_solr_url
     return $url;
 }
 
-=head2 get_live_collection( $db )
-
-Get the name of the currently live collection, as stored in database_variables in postgres.
-
-We configure solr to  run 2 collections (collection1 and collection2) so that we can use one for staging a full import
-while the other stays live.  If you need to create a solr url using get_solr_url(), you should always use this function
-to create the collection name to query the production server (or get_staging_collection() to query the staging server).
-
-The flag for which collection is live is stored in postgres rather than in mediawords.yml so that the staging server
-can be changed without needing to reboot all running clients that might query solr.
-
-=cut
-
-sub get_live_collection
+# Get a Solr URL together with the collection name
+sub get_solr_url_collection()
 {
-    my ( $db ) = @_;
+    my $url = get_solr_url();
 
-    my ( $collection ) = $db->query( "select value from database_variables where name = 'live_solr_collection' " )->flat;
+    $url .= '/' . $SOLR_COLLECTION;
 
-    return $collection || 'collection1';
-}
-
-=head2 get_staging_collection( $db )
-
-Get the name of the staging collection.  See get_live_collection() above.
-
-=cut
-
-sub get_staging_collection
-{
-    my ( $db ) = @_;
-
-    my $live_collection = get_live_collection( $db );
-
-    return $live_collection eq 'collection1' ? 'collection2' : 'collection1';
-}
-
-=head2 swap_live_collection( $db )
-
-Swap which collection is live and which is staging.  See get_live_collection() above.
-
-=cut
-
-sub swap_live_collection
-{
-    my ( $db ) = @_;
-
-    my $current_staging_collection = get_staging_collection( $db );
-
-    $db->begin;
-
-    $db->query( "delete from database_variables where name = 'live_solr_collection'" );
-    $db->create( 'database_variables', { name => 'live_solr_collection', value => $current_staging_collection } );
-
-    $db->commit;
+    return $url;
 }
 
 =head2 get_last_num_found
@@ -296,7 +244,7 @@ sub _query_encoded_json($$;$)
 
     $params->{ fq } = [ map { _insert_collection_media_ids( $db, $_ ) } @{ $params->{ fq } } ];
 
-    my $url = sprintf( '%s/%s/select', get_solr_url(), get_live_collection( $db ) );
+    my $url = get_solr_url_collection() . '/select';
 
     my $ua = MediaWords::Util::Web::UserAgent->new();
 
