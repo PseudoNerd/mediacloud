@@ -46,7 +46,6 @@ has 'sample_size'       => ( is => 'rw', isa => 'Int', default => 1000 );
 has 'random_seed'       => ( is => 'rw', isa => 'Int', default => 1 );
 has 'ngram_size'        => ( is => 'rw', isa => 'Int', default => 1 );
 has 'include_stopwords' => ( is => 'rw', isa => 'Bool', default => 0 );
-has 'include_stats'     => ( is => 'rw', isa => 'Bool', default => 0 );
 
 has 'cached_combined_stopwords' => ( is => 'rw', isa => 'HashRef' );
 has 'db' => ( is => 'rw' );
@@ -54,7 +53,7 @@ has 'db' => ( is => 'rw' );
 # list of all attribute names that should be exposed as cgi params
 sub get_cgi_param_attributes
 {
-    return [ qw(q fq num_words sample_size random_seed include_stopwords include_stats ngram_size) ];
+    return [ qw(q fq num_words sample_size random_seed include_stopwords ngram_size) ];
 }
 
 # return hash of attributes for use as cgi params
@@ -357,23 +356,16 @@ sub get_words
 
     splice( @{ $counts }, $self->num_words );
 
-    if ( $self->include_stats )
-    {
-        return {
-            stats => {
-                num_words_returned     => scalar( @{ $counts } ),
-                num_sentences_returned => scalar( @{ $story_sentences } ),
-                num_words_param        => $self->num_words,
-                sample_size_param      => $self->sample_size,
-                random_seed            => $self->random_seed
-            },
-            words => $counts
-        };
-    }
-    else
-    {
-        return $counts;
-    }
+    return {
+        stats => {
+            num_words_returned     => scalar( @{ $counts } ),
+            num_sentences_returned => scalar( @{ $story_sentences } ),
+            num_words_param        => $self->num_words,
+            sample_size_param      => $self->sample_size,
+            random_seed            => $self->random_seed
+        },
+        words => $counts,
+    };
 }
 
 1;

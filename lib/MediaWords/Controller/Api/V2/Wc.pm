@@ -47,6 +47,11 @@ sub list_GET : PathPrefix( '/api' )
 
     my $words = $wc->get_words;
 
+    unless ( int( $c->req->params->{ include_stats } // 0 ) )
+    {
+        $words = $words->{ words };
+    }
+
     $self->status_ok( $c, entity => $words );
 }
 
