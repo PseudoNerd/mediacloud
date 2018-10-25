@@ -1,9 +1,13 @@
 package MediaWords::Controller::Api::V2::Wc;
-use Modern::Perl "2015";
-use MediaWords::CommonLibs;
 
 use strict;
 use warnings;
+
+use Modern::Perl "2015";
+use MediaWords::CommonLibs;
+
+use MediaWords::Solr::WordCounts;
+
 use base 'Catalyst::Controller';
 use List::Util qw(first max maxstr min minstr reduce shuffle sum);
 use Moose;
@@ -38,14 +42,23 @@ sub list_GET : PathPrefix( '/api' )
 {
     my ( $self, $c ) = @_;
 
-    if ( $c->req->params->{ sample_size } && ( $c->req->params->{ sample_size } > 100_000 ) )
+    my $sample_size = int( $c->req->params->{ sample_size } // 0 );
+    if ( $sample_size > 100_000 )
     {
-        $c->req->params->{ sample_size } = 100_000;
+        $sample_size = 100_000;
     }
 
-    my $wc = MediaWords::Solr::WordCounts->new( { db => $c->dbis, cgi_params => $c->req->params } );
+    my $wc = MediaWords::Solr::WordCounts->new(
+        {
+            num_words         => $c->req->params->{ num_words },
+            sample_size       => $sample_size,
+            random_seed       => $c->req->params->{ random_seed },
+            ngram_seed        => $c->req->params->{ ngram_seed },
+            include_stopwords => $c->req->params->{ include_stopwords },
+        }
+    );
 
-    my $words = $wc->get_words;
+    my $words = $wc->get_words( $c->dbis, $c->req->params->{ q }, $c->req->params->{ fq } );
 
     unless ( int( $c->req->params->{ include_stats } // 0 ) )
     {

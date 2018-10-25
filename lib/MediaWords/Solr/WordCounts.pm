@@ -1,7 +1,5 @@
 package MediaWords::Solr::WordCounts;
 
-use Moose;
-
 =head1 NAME
 
 MediaWords::Solr::WordCounts - handle word counting from solr
@@ -38,94 +36,31 @@ Readonly my $MAX_SENTENCE_LENGTH => 1024;
 # Max. number of times to count a word in a single sentence
 Readonly my $MAX_REPEATS_PER_SENTENCE => 3;
 
-# Parameters
-has 'q'                 => ( is => 'rw', isa => 'Str' );
-has 'fq'                => ( is => 'rw', isa => 'ArrayRef', default => [] );
-has 'num_words'         => ( is => 'rw', isa => 'Int', default => 500 );
-has 'sample_size'       => ( is => 'rw', isa => 'Int', default => 1000 );
-has 'random_seed'       => ( is => 'rw', isa => 'Int', default => 1 );
-has 'ngram_size'        => ( is => 'rw', isa => 'Int', default => 1 );
-has 'include_stopwords' => ( is => 'rw', isa => 'Bool', default => 0 );
-
-has 'cached_combined_stopwords' => ( is => 'rw', isa => 'HashRef' );
-has 'db' => ( is => 'rw' );
-
-# list of all attribute names that should be exposed as cgi params
-sub get_cgi_param_attributes
+sub new($;$)
 {
-    return [ qw(q fq num_words sample_size random_seed include_stopwords ngram_size) ];
-}
+    my ( $class, $args ) = @_;
 
-# return hash of attributes for use as cgi params
-sub _get_cgi_param_hash($)
-{
-    my ( $self ) = @_;
+    my $self = {};
+    bless( $self, $class );
 
-    my $keys = get_cgi_param_attributes;
-
-    my $meta = $self->meta;
-
-    my $hash = {};
-    map { $hash->{ $_ } = $meta->get_attribute( $_ )->get_value( $self ) } @{ $keys };
-
-    return $hash;
-}
-
-# add support for constructor in this form:
-#   WordsCounts->new( cgi_params => $cgi_params )
-# where $cgi_params is a hash of cgi params directly from a web request
-around BUILDARGS => sub {
-    my $orig  = shift;
-    my $class = shift;
-
-    my $args;
-    if ( ref( $_[ 0 ] ) )
-    {
-        $args = $_[ 0 ];
-    }
-    elsif ( defined( $_[ 0 ] ) )
-    {
-        $args = { @_ };
-    }
-    else
+    unless ( $args )
     {
         $args = {};
     }
 
-    my $vals;
-    if ( $args->{ cgi_params } )
-    {
-        my $cgi_params = $args->{ cgi_params };
+    # Positive integers (so ||)
+    $self->{ _num_words }   = int( $args->{ num_words }   || 500 );
+    $self->{ _sample_size } = int( $args->{ sample_size } || 1000 );
 
-        $vals = {};
-        my $keys = get_cgi_param_attributes;
-        for my $key ( @{ $keys } )
-        {
-            if ( exists( $cgi_params->{ $key } ) )
-            {
-                $vals->{ $key } = $cgi_params->{ $key };
-            }
-        }
+    # Booleans (so //)
+    $self->{ _random_seed }       = int( $args->{ random_seed }       // 1 );
+    $self->{ _ngram_size }        = int( $args->{ ngram_size }        // 1 );
+    $self->{ _include_stopwords } = int( $args->{ include_stopwords } // 0 );
 
-        if ( $args->{ db } )
-        {
-            $vals->{ db } = $args->{ db };
-        }
-    }
-    else
-    {
-        $vals = $args;
-    }
+    $self->{ _cached_combined_stopwords } = {};
 
-    if ( $vals->{ fq } && !ref( $vals->{ fq } ) )
-    {
-        $vals->{ fq } = [ $vals->{ fq } ];
-    }
-
-    $vals->{ fq } ||= [];
-
-    return $class->$orig( $vals );
-};
+    return $self;
+}
 
 # Cache merged hashes of stopwords for speed
 sub _combine_stopwords($$)
@@ -163,12 +98,7 @@ sub _combine_stopwords($$)
 
     my $cache_key = join( '-', @{ $language_codes } );
 
-    unless ( $self->cached_combined_stopwords() )
-    {
-        $self->cached_combined_stopwords( {} );
-    }
-
-    unless ( defined $self->cached_combined_stopwords->{ $cache_key } )
+    unless ( defined $self->{ _cached_combined_stopwords }->{ $cache_key } )
     {
         my $combined_stopwords = {};
         foreach my $language ( @{ $languages } )
@@ -177,10 +107,10 @@ sub _combine_stopwords($$)
             $combined_stopwords = { ( %{ $combined_stopwords }, %{ $stopwords } ) };
         }
 
-        $self->cached_combined_stopwords->{ $cache_key } = $combined_stopwords;
+        $self->{ _cached_combined_stopwords }->{ $cache_key } = $combined_stopwords;
     }
 
-    return $self->cached_combined_stopwords->{ $cache_key };
+    return $self->{ _cached_combined_stopwords }->{ $cache_key };
 }
 
 # expects story_sentence hashes, with a story_language field.
@@ -211,7 +141,10 @@ sub count_stems($$)
         $dup_sentences->{ $sentence } = 1;
 
         # Very long sentences tend to be noise -- html text and the like.
-        $sentence = substr( $sentence, 0, $MAX_SENTENCE_LENGTH ) if ( length( $sentence ) > $MAX_SENTENCE_LENGTH );
+        if ( length( $sentence ) > $MAX_SENTENCE_LENGTH )
+        {
+            $sentence = substr( $sentence, 0, $MAX_SENTENCE_LENGTH );
+        }
 
         # Remove urls so they don't get tokenized into noise
         if ( $sentence =~ m~https?://[^\s]+~i )
@@ -233,7 +166,7 @@ sub count_stems($$)
         # Remove stopwords;
         # (don't stem stopwords first as they will usually be stemmed too much)
         my $combined_stopwords = {};
-        unless ( $self->include_stopwords )
+        unless ( $self->{ _include_stopwords } )
         {
             # Use both sentence's language and English stopwords
             $combined_stopwords = $self->_combine_stopwords( [ $lang_en, $lang_story, $lang_sentence ] );
@@ -261,10 +194,17 @@ sub count_stems($$)
         $sentence_words = [ grep { _word_is_valid_token( $_, $combined_stopwords ) } @{ $sentence_words } ];
 
         # Stem using sentence language's algorithm
-        my $sentence_word_stems =
-          ( $self->ngram_size > 1 ) ? $sentence_words : $lang_sentence->stem_words( $sentence_words );
+        my $sentence_word_stems;
+        if ( $self->{ _ngram_size } > 1 )
+        {
+            $sentence_word_stems = $sentence_words;
+        }
+        else
+        {
+            $sentence_word_stems = $lang_sentence->stem_words( $sentence_words );
+        }
 
-        my $n          = $self->ngram_size;
+        my $n          = $self->{ _ngram_size };
         my $num_ngrams = scalar( @{ $sentence_words } ) - $n + 1;
 
         my $sentence_stem_counts = {};
@@ -292,29 +232,47 @@ sub count_stems($$)
 
 # Get sorted list of most common words in sentences matching a Solr query.
 # Exclude stop words.
-sub get_words
+sub get_words($$$$)
 {
-    my ( $self ) = @_;
+    my ( $self, $db, $q, $fq ) = @_;
 
-    my $db = $self->db;
-
-    unless ( $self->q() || ( $self->fq && @{ $self->fq } ) )
+    $q  //= '';
+    $fq //= [];
+    if ( $fq and ( !ref( $fq ) ) )
     {
-        return [];
+        $fq = [ $fq ];
+    }
+
+    unless ( $q or @{ $fq } )
+    {
+        WARN "Neither 'q' nor 'fq' is set, returning empty result set";
+        return {
+            stats => {
+                num_words_returned     => 0,
+                num_sentences_returned => 0,
+                num_words_param        => $self->{ _num_words },
+                sample_size_param      => $self->{ _sample_size },
+                random_seed            => $self->{ _random_seed },
+            },
+            words => [],
+        };
     }
 
     my $solr_params = {
-        q    => $self->q(),
-        fq   => $self->fq,
-        rows => $self->sample_size,
-        sort => 'random_' . $self->random_seed . ' asc'
+        q    => $q,
+        fq   => $fq,
+        rows => $self->{ _sample_size },
+        sort => 'random_' . $self->{ _random_seed } . ' asc'
     };
 
     DEBUG( "executing solr query ..." );
     DEBUG Dumper( $solr_params );
 
-    my $story_sentences =
-      MediaWords::Solr::Query::query_solr_for_matching_sentences( $self->db, $solr_params, $self->sample_size );
+    my $story_sentences = MediaWords::Solr::Query::query_solr_for_matching_sentences(
+        $db,                        #
+        $solr_params,               #
+        $self->{ _sample_size },    #
+    );
 
     DEBUG( "counting sentences..." );
     my $words = $self->count_stems( $story_sentences );
@@ -345,24 +303,37 @@ sub get_words
             }
         }
 
-        if ( !MediaWords::Util::Text::is_valid_utf8( $w->{ stem } ) || !MediaWords::Util::Text::is_valid_utf8( $max_term ) )
+        unless ( MediaWords::Util::Text::is_valid_utf8( $w->{ stem } ) )
         {
-            WARN "invalid utf8: $w->{ stem } / $max_term";
+            WARN "Invalid UTF-8 in stem: $w->{ stem }";
             next;
         }
 
-        push( @{ $counts }, { stem => $w->{ stem }, count => $w->{ count }, term => $max_term } );
+        unless ( MediaWords::Util::Text::is_valid_utf8( $max_term ) )
+        {
+            WARN "Invalid UTF-8 in max. term: $max_term";
+            next;
+        }
+
+        push(
+            @{ $counts },
+            {
+                stem  => $w->{ stem },     #
+                count => $w->{ count },    #
+                term  => $max_term,        #
+            }
+        );
     }
 
-    splice( @{ $counts }, $self->num_words );
+    splice( @{ $counts }, $self->{ _num_words } );
 
     return {
         stats => {
             num_words_returned     => scalar( @{ $counts } ),
             num_sentences_returned => scalar( @{ $story_sentences } ),
-            num_words_param        => $self->num_words,
-            sample_size_param      => $self->sample_size,
-            random_seed            => $self->random_seed
+            num_words_param        => $self->{ _num_words },
+            sample_size_param      => $self->{ _sample_size },
+            random_seed            => $self->{ _random_seed },
         },
         words => $counts,
     };

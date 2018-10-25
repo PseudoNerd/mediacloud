@@ -24,7 +24,7 @@ BEGIN
 # test count_stems() function that does the core word counting logic
 sub test_count_stems
 {
-    my $wc = MediaWords::Solr::WordCounts->new( include_stopwords => 0 );
+    my $wc = MediaWords::Solr::WordCounts->new( { include_stopwords => 0 } );
 
     my $sentences_and_story_languages = [
         {
@@ -241,7 +241,7 @@ select
         sentence ~ ?
 SQL
 
-    my $wc = MediaWords::Solr::WordCounts->new( include_stopwords => 1 );
+    my $wc = MediaWords::Solr::WordCounts->new( { include_stopwords => 1 } );
 
     my $num_words = 10;
 
@@ -261,12 +261,12 @@ SQL
     splice( @{ $expected_counts }, $num_words );
 
     my $test_wc = MediaWords::Solr::WordCounts->new(
-        db                => $db,
-        q                 => "$first_word*",
-        num_words         => $num_words,
-        include_stopwords => 1
+        {
+            num_words         => $num_words,
+            include_stopwords => 1,
+        }
     );
-    my $got_counts = $test_wc->get_words();
+    my $got_counts = $test_wc->get_words( $db, $first_word, undef );
 
     # term is hard to test without reproducing lots of logic, and term counting is already tested above
     map { delete( $_->{ term } ) } @{ $got_counts };

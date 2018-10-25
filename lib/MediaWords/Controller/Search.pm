@@ -194,22 +194,6 @@ sub _match_stories_to_pattern
     return $stories;
 }
 
-# stash all the parameters relevant to a wc query, which includes the 'q' param necessary for a
-# non-wc search
-sub _stash_wc_query_params
-{
-    my ( $c ) = @_;
-
-    my $keys = MediaWords::Solr::WordCounts::get_cgi_param_attributes;
-
-    map { $c->stash->{ $_ } = $c->req->params->{ $_ } } @{ $keys };
-
-    if ( $c->req->params->{ languages } && ref( $c->req->params->{ languages } ) )
-    {
-        $c->stash->{ languages } = join( " ", @{ $c->req->params->{ languages } } );
-    }
-}
-
 # if there the error is empty, return undef. if the error is a recognized message, return a
 # suitable error message as the catalyst response. otherwise, print the error to stderr and
 # print a generic error message
@@ -355,8 +339,6 @@ sub index : Path : Args(0)
     my $stories;
     eval { $stories = MediaWords::Solr::Query::search_for_stories( $db, $solr_params ) };
 
-    _stash_wc_query_params( $c );
-
     return if ( _return_recognized_query_error( $c, $@ ) );
 
     _match_stories_to_pattern( $db, $stories, $pattern ) if ( defined( $pattern ) );
@@ -413,12 +395,13 @@ sub wc : Local
         die( "searches by sentence not allowed" );
     }
 
-    my $wc = MediaWords::Solr::WordCounts->new( db => $c->dbis, cgi_params => $c->req->params );
+    my $wc = MediaWords::Solr::WordCounts->new();
 
     my $words;
-    eval { $words = $wc->get_words };
-
-    _stash_wc_query_params( $c );
+    eval {
+        $words = $wc->get_words( $c->dbis, $q, undef );
+        $words = $words->{ words };
+    };
 
     return if ( _return_recognized_query_error( $c, $@ ) );
 

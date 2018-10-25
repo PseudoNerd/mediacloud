@@ -1623,7 +1623,9 @@ sub _get_story_words ($$$$$;$)
         $num_words = ( $num_words < 100 ) ? $num_words : 100;
     }
 
-    my $story_words = MediaWords::Solr::WordCounts->new( db => $db, %{ $solr_p } )->get_words;
+    my $wc = MediaWords::Solr::WordCounts->new();
+    my $story_words = $wc->get_words( $db, $solr_p->{ q }, undef );
+    $story_words = $story_words->{ words };
 
     splice( @{ $story_words }, $num_words );
 
