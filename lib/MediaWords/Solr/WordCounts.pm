@@ -47,7 +47,6 @@ has 'sample_size'               => ( is => 'rw', isa => 'Int', default => 1000 )
 has 'random_seed'               => ( is => 'rw', isa => 'Int', default => 1 );
 has 'ngram_size'                => ( is => 'rw', isa => 'Int', default => 1 );
 has 'include_stopwords'         => ( is => 'rw', isa => 'Bool' );
-has 'no_remote'                 => ( is => 'rw', isa => 'Bool' );
 has 'include_stats'             => ( is => 'rw', isa => 'Bool' );
 has 'cached_combined_stopwords' => ( is => 'rw', isa => 'HashRef' );
 has 'db' => ( is => 'rw' );
@@ -55,7 +54,7 @@ has 'db' => ( is => 'rw' );
 # list of all attribute names that should be exposed as cgi params
 sub get_cgi_param_attributes
 {
-    return [ qw(q fq num_words sample_size random_seed include_stopwords include_stats no_remote ngram_size) ];
+    return [ qw(q fq num_words sample_size random_seed include_stopwords include_stats ngram_size) ];
 }
 
 # return hash of attributes for use as cgi params
@@ -292,8 +291,9 @@ sub count_stems($$)
     return $stem_counts;
 }
 
-# connect to solr server directly and count the words resulting from the query
-sub _get_words_from_solr_server($)
+# Get sorted list of most common words in sentences matching a Solr query.
+# Exclude stop words.
+sub get_words
 {
     my ( $self ) = @_;
 
@@ -374,69 +374,6 @@ sub _get_words_from_solr_server($)
     {
         return $counts;
     }
-}
-
-# fetch word counts from a separate server
-sub _get_remote_words
-{
-    my ( $self ) = @_;
-
-    my $url = MediaWords::Util::Config::get_config->{ mediawords }->{ solr_wc_url };
-    my $key = MediaWords::Util::Config::get_config->{ mediawords }->{ solr_wc_key };
-
-    unless ( $url && $key )
-    {
-        return undef;
-    }
-
-    my $ua = MediaWords::Util::Web::UserAgent->new();
-
-    $ua->set_timeout( 900 );
-    $ua->set_max_size( undef );
-
-    my $uri          = URI->new( $url );
-    my $query_params = $self->_get_cgi_param_hash();
-
-    $query_params->{ no_remote } = 1;
-    $query_params->{ key }       = $key;
-
-    $uri->query_form( $query_params );
-
-    my $request = MediaWords::Util::Web::UserAgent::Request->new( 'GET', $uri->as_string );
-    $request->set_header( 'Accept', 'application/json' );
-    my $res = $ua->request( $request );
-
-    unless ( $res->is_success )
-    {
-        die( "error retrieving words from solr: " . $res->decoded_content );
-    }
-
-    my $words = MediaWords::Util::ParseJSON::decode_json( $res->decoded_content );
-
-    unless ( $words && ref( $words ) )
-    {
-        die( "Unable to parse json" );
-    }
-
-    return $words;
-}
-
-# get sorted list of most common words in sentences matching a Solr query,
-# exclude stop words. Assumes english stemming and stopwording for now.
-sub get_words
-{
-    my ( $self ) = @_;
-
-    my $words;
-
-    unless ( $self->no_remote )
-    {
-        $words = $self->_get_remote_words;
-    }
-
-    $words ||= $self->_get_words_from_solr_server();
-
-    return $words;
 }
 
 1;
