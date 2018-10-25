@@ -40,7 +40,7 @@ use List::MoreUtils qw ( uniq );
 
 use Time::HiRes;
 
-Readonly my $SOLR_COLLECTION => 'collection1';
+Readonly my $SOLR_COLLECTION => 'mediacloud';
 
 Readonly my $QUERY_HTTP_TIMEOUT => 900;
 
