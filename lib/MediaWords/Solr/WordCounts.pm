@@ -40,7 +40,7 @@ Readonly my $MAX_REPEATS_PER_SENTENCE => 3;
 
 # Parameters
 has 'q'                 => ( is => 'rw', isa => 'Str' );
-has 'fq'                => ( is => 'rw', isa => 'ArrayRef' );
+has 'fq'                => ( is => 'rw', isa => 'ArrayRef', default => [] );
 has 'num_words'         => ( is => 'rw', isa => 'Int', default => 500 );
 has 'sample_size'       => ( is => 'rw', isa => 'Int', default => 1000 );
 has 'random_seed'       => ( is => 'rw', isa => 'Int', default => 1 );
